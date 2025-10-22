@@ -1,8 +1,8 @@
 // Modulos Externos
 import { Module, Global, Logger } from '@nestjs/common';
-import pino from 'pino';
+import pino, { type LoggerOptions } from 'pino';
 
-// Modulos Internos 
+// Modulos Internos
 import { AppLogger, PINO_LOGGER_TOKEN } from './logger';
 import { ContextService } from '../context/context.service';
 import { ContextModule } from '../context/context.module';
@@ -14,23 +14,24 @@ import { ContextModule } from '../context/context.module';
     {
       provide: PINO_LOGGER_TOKEN,
       useFactory: (contextService: ContextService) => {
-        const transport = process.env.NODE_ENV !== 'production'
-          ? {
-            target: 'pino-pretty',
-            options: {
-              ignore: 'pid,hostname,app,context,correlationId',
+        const transport: LoggerOptions['transport'] =
+          process.env.NODE_ENV !== 'production'
+            ? {
+                target: 'pino-pretty',
+                options: {
+                  ignore: 'pid,hostname,app,context,correlationId',
 
-              messageFormat: `
+                  messageFormat: `
               [{context}] 
               {correlationId} 
               {msg}
               `,
-              colorize: true,
-              levelFirst: true,
-              translateTime: 'SYS:yyyy-mm-dd HH:MM:ss',
-            },
-          }
-          : undefined;
+                  colorize: true,
+                  levelFirst: true,
+                  translateTime: 'SYS:yyyy-mm-dd HH:MM:ss',
+                },
+              }
+            : undefined;
 
         return pino({
           level: process.env.LOG_LEVEL ?? 'info',
@@ -41,31 +42,63 @@ import { ContextModule } from '../context/context.module';
           },
 
           hooks: {
-            logMethod(input: any[], method: (obj: any, msg?: string, ...args: any[]) => void) {
-              const logObject = typeof input[0] === 'object' && input[0] !== null ? input.shift() : {};
+            logMethod(
+              input: unknown[],
+              method: (
+                obj: Record<string, unknown>,
+                msg?: string,
+                ...args: unknown[]
+              ) => void,
+            ) {
+              const args = [...input];
+              const logObject: Record<string, unknown> = {};
 
-              const correlationId = contextService.getCorrelationId() || 'SYS';
-
-              if (correlationId) {
-                logObject.correlationId = correlationId;
+              if (
+                typeof args[0] === 'object' &&
+                args[0] !== null &&
+                !Array.isArray(args[0])
+              ) {
+                Object.assign(
+                  logObject,
+                  args.shift() as Record<string, unknown>,
+                );
               }
-              return method.apply(this, [logObject, input[0], ...input.slice(1)]);
+
+              const store = contextService.getStore();
+              const correlationId = store?.correlationId || 'SYS';
+
+              logObject.correlationId = correlationId;
+
+              if (store?.method) {
+                logObject.method = store.method;
+              }
+              if (store?.url) {
+                logObject.url = store.url;
+              }
+              if (store?.userId) {
+                logObject.userId = store.userId;
+              }
+              if (store?.ip) {
+                logObject.ip = store.ip;
+              }
+
+              method.apply(this, [logObject, ...args]);
             },
           },
         });
       },
-      inject: [ContextService]
+      inject: [ContextService],
     },
     {
       provide: AppLogger,
       useFactory: (p: pino.Logger) => new AppLogger(p),
-      inject: [PINO_LOGGER_TOKEN]
+      inject: [PINO_LOGGER_TOKEN],
     },
     {
       provide: Logger,
-      useExisting: AppLogger
-    }
+      useExisting: AppLogger,
+    },
   ],
   exports: [AppLogger, Logger],
 })
-export class LoggerModule { }
+export class LoggerModule {}

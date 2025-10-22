@@ -4,8 +4,8 @@ import { AppLogger } from './common/logger/logger';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
-  app.useLogger(app.get(AppLogger))
+  app.useLogger(app.get(AppLogger));
 
-  await app.listen(process.env.PORT ?? 3000);
+  await app.listen(process.env.PORT ?? 4000);
 }
-bootstrap();
+void bootstrap();

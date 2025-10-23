@@ -11,7 +11,9 @@ import { AppLogger } from '../logger/logger';
 
 @Injectable()
 export class HttpLoggingInterceptor implements NestInterceptor {
-  constructor(private readonly logger: AppLogger) {}
+  constructor(private readonly logger: AppLogger) {
+    this.logger.setContext(HttpLoggingInterceptor.name);
+  }
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     const http = context.switchToHttp();

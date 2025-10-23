@@ -1,11 +1,13 @@
 // Modulos Externos
 import { Module, Global, Logger } from '@nestjs/common';
 import pino, { type LoggerOptions } from 'pino';
+import { ConfigService } from '@nestjs/config';
 
 // Modulos Internos
 import { AppLogger, PINO_LOGGER_TOKEN } from './logger';
 import { ContextService } from '../context/context.service';
 import { ContextModule } from '../context/context.module';
+import { Env } from '../config/env.schema';
 
 @Global()
 @Module({
@@ -13,9 +15,17 @@ import { ContextModule } from '../context/context.module';
   providers: [
     {
       provide: PINO_LOGGER_TOKEN,
-      useFactory: (contextService: ContextService) => {
+      useFactory: (
+        contextService: ContextService,
+        configService: ConfigService<Env, true>,
+      ) => {
+        const nodeEnv =
+          configService.get<'development' | 'test' | 'production'>('NODE_ENV', {
+            infer: true,
+          }) ?? 'development';
+
         const transport: LoggerOptions['transport'] =
-          process.env.NODE_ENV !== 'production'
+          nodeEnv !== 'production'
             ? {
                 target: 'pino-pretty',
                 options: {
@@ -33,8 +43,13 @@ import { ContextModule } from '../context/context.module';
               }
             : undefined;
 
+        const logLevel =
+          configService.get<
+            'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'trace' | 'silent'
+          >('LOG_LEVEL', { infer: true }) ?? 'info';
+
         return pino({
-          level: process.env.LOG_LEVEL ?? 'info',
+          level: logLevel,
           transport: transport,
 
           base: {
@@ -87,12 +102,11 @@ import { ContextModule } from '../context/context.module';
           },
         });
       },
-      inject: [ContextService],
+      inject: [ContextService, ConfigService],
     },
     {
       provide: AppLogger,
-      useFactory: (p: pino.Logger) => new AppLogger(p),
-      inject: [PINO_LOGGER_TOKEN],
+      useClass: AppLogger,
     },
     {
       provide: Logger,

@@ -3,7 +3,7 @@ import { type Logger as PinoLogger } from 'pino';
 
 export const PINO_LOGGER_TOKEN = Symbol('PINO_LOGGER_TOKEN');
 
-@Injectable({ scope: Scope.REQUEST }) // Scope.TRANSIENT permite inyectar el contexto de la petición
+@Injectable({ scope: Scope.TRANSIENT })
 export class AppLogger extends ConsoleLogger {
   constructor(@Inject(PINO_LOGGER_TOKEN) private readonly pino: PinoLogger) {
     super();

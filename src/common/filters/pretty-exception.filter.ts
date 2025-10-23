@@ -22,7 +22,9 @@ interface ExceptionPayload {
 @Catch()
 @Injectable({ scope: Scope.REQUEST })
 export class PrettyExceptionFilter implements ExceptionFilter {
-  constructor(private readonly logger: AppLogger) {}
+  constructor(private readonly logger: AppLogger) {
+    this.logger.setContext(PrettyExceptionFilter.name);
+  }
 
   catch(exception: unknown, host: ArgumentsHost) {
     const http = host.switchToHttp();

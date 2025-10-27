@@ -32,8 +32,8 @@ import { Env } from '../config/env.schema';
                   ignore: 'pid,hostname,app,context,correlationId',
 
                   messageFormat: `
-              [{context}] 
-              {correlationId} 
+              [{context}]
+              {correlationId}
               {msg}
               `,
                   colorize: true,
@@ -41,7 +41,16 @@ import { Env } from '../config/env.schema';
                   translateTime: 'SYS:yyyy-mm-dd HH:MM:ss',
                 },
               }
-            : undefined;
+            : {
+                target: 'pino-pretty',
+                options: {
+                  colorize: false,
+                  levelFirst: true,
+                  translateTime: 'SYS:yyyy-mm-dd HH:MM:ss',
+                  destination: 1, // stdout - puede ser redirigido a archivo por systemd/docker
+                  messageFormat: '[{context}] {correlationId} {msg}',
+                },
+              };
 
         const logLevel =
           configService.get<
@@ -54,6 +63,8 @@ import { Env } from '../config/env.schema';
 
           base: {
             app: process.env.npm_package_name || 'nestjs-app',
+            version: process.env.npm_package_version || '1.0.0',
+            environment: nodeEnv,
           },
 
           hooks: {

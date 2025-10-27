@@ -10,12 +10,14 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
+import { plainToInstance } from 'class-transformer';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { UsersService } from '../services/users.service';
 import { CreateUserDto } from '../dto/create-user.dto';
 import { UpdateUserDto } from '../dto/update-user.dto';
 import { UserQueryDto } from '../dto/user-query.dto';
-import { User } from '../entities/user.entity';
+import { UserResponseDto } from '../dto/user-response.dto';
+import { PageDto } from '../../../common/dto/page.dto';
 import { AppLogger } from '../../../common/logger/logger';
 
 @ApiTags('users')
@@ -33,39 +35,51 @@ export class UsersController {
   @ApiResponse({
     status: 201,
     description: 'User successfully created',
-    type: User,
+    type: UserResponseDto,
   })
   @ApiResponse({
     status: 409,
     description: 'User with this email already exists',
   })
-  async create(@Body() createUserDto: CreateUserDto): Promise<User> {
+  async create(@Body() createUserDto: CreateUserDto): Promise<UserResponseDto> {
     return this.usersService.create(createUserDto);
   }
 
   @Get()
-  @ApiOperation({ summary: 'Get all users with pagination and filters' })
+  @ApiOperation({ summary: 'Search users with pagination and filters' })
   @ApiResponse({
     status: 200,
     description: 'Users retrieved successfully',
+    type: PageDto<UserResponseDto>,
+  })
+  async search(@Query() query: UserQueryDto): Promise<PageDto<UserResponseDto>> {
+    const searchQuery = plainToInstance(UserQueryDto, query);
+    return this.usersService.search(searchQuery);
+  }
+
+  @Get('legacy')
+  @ApiOperation({ summary: 'Legacy endpoint for backward compatibility - use /users instead' })
+  @ApiResponse({
+    status: 200,
+    description: 'Users retrieved successfully (legacy format)',
     schema: {
       type: 'object',
       properties: {
         users: {
           type: 'array',
-          items: { $ref: '#/components/schemas/User' },
+          items: { $ref: '#/components/schemas/UserResponseDto' },
         },
         total: { type: 'number' },
       },
     },
   })
-  @ApiQuery({ name: 'page', required: false, type: Number })
-  @ApiQuery({ name: 'limit', required: false, type: Number })
-  @ApiQuery({ name: 'sortBy', required: false, type: String })
-  @ApiQuery({ name: 'sortOrder', required: false, enum: ['asc', 'desc'] })
-  @ApiQuery({ name: 'search', required: false, type: String })
   async findAll(@Query() query: UserQueryDto) {
-    return this.usersService.findAll(query);
+    // Legacy compatibility endpoint
+    const result = await this.search(query);
+    return {
+      users: result.data,
+      total: result.metadata.count,
+    };
   }
 
   @Get(':id')
@@ -74,13 +88,13 @@ export class UsersController {
   @ApiResponse({
     status: 200,
     description: 'User retrieved successfully',
-    type: User,
+    type: UserResponseDto,
   })
   @ApiResponse({
     status: 404,
     description: 'User not found',
   })
-  async findOne(@Param('id') id: string): Promise<User> {
+  async findOne(@Param('id') id: string): Promise<UserResponseDto> {
     return this.usersService.findOne(id);
   }
 
@@ -90,7 +104,7 @@ export class UsersController {
   @ApiResponse({
     status: 200,
     description: 'User successfully updated',
-    type: User,
+    type: UserResponseDto,
   })
   @ApiResponse({
     status: 404,
@@ -103,7 +117,7 @@ export class UsersController {
   async update(
     @Param('id') id: string,
     @Body() updateUserDto: UpdateUserDto,
-  ): Promise<User> {
+  ): Promise<UserResponseDto> {
     return this.usersService.update(id, updateUserDto);
   }
 

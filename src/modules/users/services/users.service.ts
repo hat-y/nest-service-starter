@@ -1,10 +1,13 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like } from 'typeorm';
+import { plainToInstance } from 'class-transformer';
 import { CreateUserDto } from '../dto/create-user.dto';
 import { UpdateUserDto } from '../dto/update-user.dto';
 import { UserQueryDto } from '../dto/user-query.dto';
+import { UserResponseDto } from '../dto/user-response.dto';
 import { User } from '../entities/user.entity';
+import { PageDto } from '../../../common/dto/page.dto';
 import { AppLogger } from '../../../common/logger/logger';
 
 @Injectable()
@@ -17,7 +20,7 @@ export class UsersService {
     this.logger.setContext(UsersService.name);
   }
 
-  async create(createUserDto: CreateUserDto): Promise<User> {
+  async create(createUserDto: CreateUserDto): Promise<UserResponseDto> {
     this.logger.log(`Iniciando validación para el email: ${createUserDto.email}`);
 
     // Check if user already exists
@@ -39,39 +42,85 @@ export class UsersService {
     const savedUser = await this.userRepository.save(user);
 
     this.logger.log(`Usuario creado exitosamente con ID: ${savedUser.id}`);
-    return savedUser;
+
+    return plainToInstance(UserResponseDto, savedUser, {
+      excludeExtraneousValues: true,
+    });
   }
 
-  async findAll(query: UserQueryDto) {
-    const { page, limit, sortBy, sortOrder, search } = query;
-
+  async search(query: UserQueryDto): Promise<PageDto<UserResponseDto>> {
     this.logger.log({
-      message: 'Buscando usuarios',
-      page,
-      limit,
-      sortBy,
-      sortOrder,
-      search,
+      message: 'Buscando usuarios con paginación',
+      query: {
+        pageNumber: query.pageNumber,
+        pageSize: query.pageSize,
+        sortBy: query.getSortBy(),
+        sortOrder: query.getSortOrder(),
+        q: query.q,
+        name: query.name,
+        email: query.email,
+        isActive: query.isActive,
+      },
     });
 
     const queryBuilder = this.userRepository.createQueryBuilder('user');
 
-    if (search) {
-      queryBuilder.where('user.name LIKE :search', { search: `%${search}%` });
+    // Aplicar filtros específicos
+    if (query.name) {
+      queryBuilder.andWhere('user.name ILIKE :name', { name: `%${query.name}%` });
     }
 
-    queryBuilder
-      .orderBy(`user.${sortBy}`, (sortOrder || 'asc').toUpperCase() as 'ASC' | 'DESC')
-      .skip(((page || 1) - 1) * (limit || 10))
-      .take(limit || 10);
+    if (query.email) {
+      queryBuilder.andWhere('user.email ILIKE :email', { email: `%${query.email}%` });
+    }
 
-    const [users, total] = await queryBuilder.getManyAndCount();
+    if (query.isActive !== undefined) {
+      queryBuilder.andWhere('user.isActive = :isActive', { isActive: query.isActive });
+    }
 
-    this.logger.log(`Encontrados ${total} usuarios`);
-    return { users, total };
+    // Búsqueda textual general
+    if (query.q) {
+      queryBuilder.andWhere(
+        '(user.name ILIKE :search OR user.email ILIKE :search)',
+        { search: `%${query.q}%` },
+      );
+    }
+
+    // Validación de campos de ordenamiento
+    const validSortFields = ['id', 'name', 'email', 'createdAt', 'updatedAt', 'isActive'];
+    const sortBy = query.getSortBy();
+
+    if (validSortFields.includes(sortBy)) {
+      queryBuilder.orderBy(`user.${sortBy}`, query.getSortOrder());
+    } else {
+      queryBuilder.orderBy('user.createdAt', 'DESC');
+    }
+
+    // Ejecutar consulta paginada
+    const [users, total] = await queryBuilder
+      .skip(query.getOffset())
+      .take(query.getTake())
+      .getManyAndCount();
+
+    this.logger.log(`Encontrados ${total} usuarios para la página ${query.pageNumber}`);
+
+    // Transformar entidades a DTOs
+    const userDtos = users.map((user) =>
+      plainToInstance(UserResponseDto, user, { excludeExtraneousValues: true }),
+    );
+
+    // Construir respuesta paginada
+    return PageDto.create(
+      userDtos,
+      total,
+      query.pageNumber,
+      query.pageSize,
+      query.getSortBy(),
+      query.sortOrder,
+    );
   }
 
-  async findOne(id: string): Promise<User> {
+  async findOne(id: string): Promise<UserResponseDto> {
     this.logger.log(`Buscando usuario con ID: ${id}`);
 
     const user = await this.userRepository.findOne({
@@ -84,10 +133,13 @@ export class UsersService {
     }
 
     this.logger.log(`Usuario con ID ${id} encontrado`);
-    return user;
+
+    return plainToInstance(UserResponseDto, user, {
+      excludeExtraneousValues: true,
+    });
   }
 
-  async update(id: string, updateUserDto: UpdateUserDto): Promise<User> {
+  async update(id: string, updateUserDto: UpdateUserDto): Promise<UserResponseDto> {
     this.logger.log({
       message: 'Actualizando usuario',
       id,
@@ -120,7 +172,10 @@ export class UsersService {
     });
 
     this.logger.log(`Usuario con ID ${id} actualizado exitosamente`);
-    return user!;
+
+    return plainToInstance(UserResponseDto, user!, {
+      excludeExtraneousValues: true,
+    });
   }
 
   async remove(id: string): Promise<void> {

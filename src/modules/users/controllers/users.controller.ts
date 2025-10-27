@@ -40,21 +40,7 @@ export class UsersController {
     description: 'User with this email already exists',
   })
   async create(@Body() createUserDto: CreateUserDto): Promise<User> {
-    const { name, email } = createUserDto;
-    this.logger.log({
-      message: `Petición [POST] recibida para ${email}`,
-      name,
-      email,
-    });
-
-    const user = await this.usersService.create(createUserDto);
-
-    this.logger.log({
-      message: 'Petición completada, enviando respuesta.',
-      userId: user.id,
-    });
-
-    return user;
+    return this.usersService.create(createUserDto);
   }
 
   @Get()
@@ -79,19 +65,7 @@ export class UsersController {
   @ApiQuery({ name: 'sortOrder', required: false, enum: ['asc', 'desc'] })
   @ApiQuery({ name: 'search', required: false, type: String })
   async findAll(@Query() query: UserQueryDto) {
-    this.logger.log({
-      message: 'Petición [GET] recibida para listar usuarios',
-      query,
-    });
-
-    const result = await this.usersService.findAll(query);
-
-    this.logger.log({
-      message: 'Petición de listado completada',
-      total: result.total,
-    });
-
-    return result;
+    return this.usersService.findAll(query);
   }
 
   @Get(':id')
@@ -107,19 +81,7 @@ export class UsersController {
     description: 'User not found',
   })
   async findOne(@Param('id') id: string): Promise<User> {
-    this.logger.log({
-      message: `Petición [GET] recibida para usuario ${id}`,
-      userId: id,
-    });
-
-    const user = await this.usersService.findOne(id);
-
-    this.logger.log({
-      message: 'Petición de obtención completada',
-      userId: id,
-    });
-
-    return user;
+    return this.usersService.findOne(id);
   }
 
   @Patch(':id')
@@ -142,20 +104,7 @@ export class UsersController {
     @Param('id') id: string,
     @Body() updateUserDto: UpdateUserDto,
   ): Promise<User> {
-    this.logger.log({
-      message: `Petición [PATCH] recibida para actualizar usuario ${id}`,
-      userId: id,
-      data: updateUserDto,
-    });
-
-    const user = await this.usersService.update(id, updateUserDto);
-
-    this.logger.log({
-      message: 'Petición de actualización completada',
-      userId: id,
-    });
-
-    return user;
+    return this.usersService.update(id, updateUserDto);
   }
 
   @Delete(':id')
@@ -171,17 +120,7 @@ export class UsersController {
     description: 'User not found',
   })
   async remove(@Param('id') id: string): Promise<void> {
-    this.logger.log({
-      message: `Petición [DELETE] recibida para eliminar usuario ${id}`,
-      userId: id,
-    });
-
     await this.usersService.remove(id);
-
-    this.logger.log({
-      message: 'Petición de eliminación completada',
-      userId: id,
-    });
   }
 
   @Patch(':id/activate')
@@ -197,17 +136,7 @@ export class UsersController {
     description: 'User not found',
   })
   async activate(@Param('id') id: string): Promise<void> {
-    this.logger.log({
-      message: `Petición [PATCH] recibida para activar usuario ${id}`,
-      userId: id,
-    });
-
     await this.usersService.activate(id);
-
-    this.logger.log({
-      message: 'Petición de activación completada',
-      userId: id,
-    });
   }
 
   @Patch(':id/deactivate')
@@ -223,16 +152,6 @@ export class UsersController {
     description: 'User not found',
   })
   async deactivate(@Param('id') id: string): Promise<void> {
-    this.logger.log({
-      message: `Petición [PATCH] recibida para desactivar usuario ${id}`,
-      userId: id,
-    });
-
     await this.usersService.deactivate(id);
-
-    this.logger.log({
-      message: 'Petición de desactivación completada',
-      userId: id,
-    });
   }
 }

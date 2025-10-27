@@ -1,0 +1,1043 @@
+# Informe Completo de Paginación: Patrón "Base Search DTOs -> Repository -> Service -> Controller"
+
+## 1. Introducción
+
+El proyecto implementa un patrón de paginación consistente y reutilizable que sigue una arquitectura limpia y escalable. Este patrón permite una implementación uniforme de la paginación en todas las entidades del sistema, facilitando el mantenimiento y la extensión de nuevas funcionalidades.
+
+El patrón se basa en una estructura de cuatro capas bien definidas:
+- **DTOs Base**: Clases base que definen los parámetros de paginación y búsqueda
+- **Repository**: Capa de acceso a datos que ejecuta las consultas paginadas
+- **Service**: Capa de lógica de negocio que orquesta las operaciones
+- **Controller**: Capa de exposición de API que maneja las peticiones HTTP
+
+## 2. Arquitectura del Flujo de Paginación
+
+```
+Request HTTP
+    ↓
+Controller (DTO de búsqueda específico)
+    ↓
+Service (lógica de negocio + transformación)
+    ↓
+Repository (consulta SQL con paginación)
+    ↓
+Base de Datos
+    ↓
+Repository (PageDto<Entity>)
+    ↓
+Service (PageDto<DTO>)
+    ↓
+Controller (Response HTTP)
+```
+
+El flujo sigue un patrón de transformación progresiva donde los datos se convierten entre diferentes representaciones:
+1. **Entity** → **DTO**: En la capa Service para exponer solo los datos necesarios
+2. **Parámetros de búsqueda** → **Query SQL**: En la capa Repository
+3. **Resultados paginados** → **PageDto**: Estandarización de la respuesta
+
+## 3. Componentes Base
+
+### 3.1 BaseSearchDto
+
+Clase base que define los parámetros comunes de paginación y búsqueda:
+
+```typescript
+// server/src/common/dto/base-search.dto.ts
+export class BaseSearchDto {
+  static readonly DEFAULT_PAGE_NUMBER = 1;
+  static readonly DEFAULT_PAGE_SIZE = 20;
+  static readonly MAX_PAGE_SIZE_ALLOWED = 30;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  sortBy?: string;
+
+  @ApiProperty({ required: false, default: BaseSearchDto.DEFAULT_PAGE_SIZE })
+  @Type(() => Number)
+  @IsInt()
+  @IsOptional()
+  pageSize: number = BaseSearchDto.DEFAULT_PAGE_SIZE;
+
+  @ApiProperty({ required: false, default: BaseSearchDto.DEFAULT_PAGE_NUMBER })
+  @Type(() => Number)
+  @IsInt()
+  @IsOptional()
+  pageNumber: number = BaseSearchDto.DEFAULT_PAGE_NUMBER;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  q?: string;
+
+  getOrderByCriterias(): OrderByDto[] {
+    return this.sortBy
+      ? this.sortBy.split(',').map((sortBy) => new OrderByDto(sortBy))
+      : [new OrderByDto('-createdDate')];
+  }
+
+  getPageNumber(): number {
+    return this.pageNumber;
+  }
+
+  getOffset(): number {
+    return (this.getPageNumber() - 1) * this.getTake();
+  }
+
+  getTake(): number {
+    return Math.min(this.pageSize, BaseSearchDto.MAX_PAGE_SIZE_ALLOWED);
+  }
+}
+```
+
+**Características clave:**
+- Valores por defecto configurables (página 1, 20 elementos)
+- Límite máximo de elementos por página (30)
+- Soporte para ordenamiento dinámico mediante `sortBy`
+- Búsqueda textual mediante `q`
+- Métodos utilitarios para cálculo de offset y take
+
+### 3.2 OrderByDto
+
+Maneja el ordenamiento dinámico con soporte para dirección ASC/DESC:
+
+```typescript
+// server/src/common/dto/order-by.dto.ts
+export class OrderByDto {
+  sortBy: string;
+  orderBy: string;
+
+  constructor(sortCriteria: string) {
+    this.sortBy = sortCriteria;
+
+    if (this.sortBy.startsWith('+') || this.sortBy.startsWith('-')) {
+      this.sortBy = this.sortBy.substring(1);
+    }
+
+    this.orderBy =
+      sortCriteria && !sortCriteria.startsWith('-') ? 'ASC' : 'DESC';
+  }
+
+  getSortBy(): string {
+    return this.sortBy;
+  }
+
+  getOrderBy(): string {
+    return this.orderBy;
+  }
+}
+```
+
+**Características clave:**
+- Soporte para prefijos `+` (ASC) y `-` (DESC)
+- Múltiples criterios de ordenamiento separados por comas
+- Por defecto ordena por `createdDate` descendente
+
+### 3.3 PageDto
+
+Contenedor genérico para respuestas paginadas:
+
+```typescript
+// server/src/common/dto/page.dto.ts
+export class PageDto<T> {
+  @ApiProperty()
+  @Expose()
+  data: T[];
+
+  @ApiProperty({ type: PageMetadataDto })
+  @Expose()
+  metadata: PageMetadataDto;
+
+  constructor(data: T[], count: number) {
+    this.data = data;
+    this.metadata = new PageMetadataDto(count);
+  }
+}
+```
+
+**Características clave:**
+- Genérico: `PageDto<T>` para cualquier tipo de DTO
+- Contiene los datos y metadatos de paginación
+- Constructor simple que inicializa con datos y conteo total
+
+### 3.4 PageMetadataDto
+
+Metadatos completos sobre la paginación:
+
+```typescript
+// server/src/common/dto/page-metadata.dto.ts
+export class PageMetadataDto {
+  @ApiProperty()
+  @Expose()
+  count: number;
+
+  @ApiProperty()
+  @Expose()
+  pageSize: number;
+
+  @ApiProperty()
+  @Expose()
+  pageNumber: number;
+
+  @ApiProperty()
+  @Expose()
+  totalPages: number;
+
+  @ApiProperty()
+  @Expose()
+  sortBy: string;
+
+  constructor(count: number) {
+    this.count = count;
+  }
+
+  setPaginationData(pageNumber: number, pageSize: number) {
+    this.pageNumber = pageNumber;
+    this.pageSize = pageSize;
+    this.totalPages = Math.ceil(this.count / this.pageSize);
+  }
+}
+```
+
+**Características clave:**
+- Total de registros (`count`)
+- Información de página actual (`pageNumber`, `pageSize`)
+- Cálculo automático de total de páginas
+- Criterio de ordenamiento aplicado
+
+## 4. Guía de Implementación Paso a Paso
+
+### Paso 1: Crear DTO de Búsqueda Específico
+
+Extender `BaseSearchDto` para añadir filtros específicos de la entidad:
+
+```typescript
+// search-product.dto.ts
+import { IsString, IsOptional, IsNumber, IsArray } from 'class-validator';
+import { BaseSearchDto } from 'src/common/dto/base-search.dto';
+
+export class SearchProductRequestDto extends BaseSearchDto {
+  @IsString()
+  @IsOptional()
+  name?: string;
+
+  @IsOptional()
+  @IsNumber()
+  minPrice?: number;
+
+  @IsOptional()
+  @IsNumber()
+  maxPrice?: number;
+
+  @IsOptional()
+  @IsArray()
+  categories?: string[];
+}
+```
+
+### Paso 2: Implementar Método de Búsqueda en Repository
+
+Crear el método `search` en el repository específico:
+
+```typescript
+// product.repository.ts
+async search(request: SearchProductRequestDto): Promise<PageDto<Product>> {
+  const queryBuilder: SelectQueryBuilder<Product> =
+    this.createQueryBuilder('product')
+      .leftJoinAndSelect('product.category', 'category');
+
+  // Aplicar filtros específicos
+  if (request.name) {
+    queryBuilder.andWhere('product.name ILIKE :name', {
+      name: `%${request.name}%`,
+    });
+  }
+
+  if (request.minPrice) {
+    queryBuilder.andWhere('product.price >= :minPrice', {
+      minPrice: request.minPrice,
+    });
+  }
+
+  if (request.maxPrice) {
+    queryBuilder.andWhere('product.price <= :maxPrice', {
+      maxPrice: request.maxPrice,
+    });
+  }
+
+  if (request.categories && request.categories.length > 0) {
+    queryBuilder.andWhere('category.name IN (:...categories)', {
+      categories: request.categories,
+    });
+  }
+
+  // Búsqueda textual general
+  if (request.q) {
+    queryBuilder.andWhere(
+      '(product.name ILIKE :search OR product.description ILIKE :search)',
+      { search: `%${request.q}%` },
+    );
+  }
+
+  // Aplicar ordenamiento dinámico
+  const validSortFields = ['name', 'price', 'createdAt', 'stock'];
+  const orderByCriteria = request.getOrderByCriterias();
+
+  orderByCriteria.forEach((criteria) => {
+    const sortBy = criteria.getSortBy();
+    if (validSortFields.includes(sortBy)) {
+      queryBuilder.addOrderBy(
+        `product.${sortBy}`,
+        criteria.getOrderBy() as 'ASC' | 'DESC',
+      );
+    }
+  });
+
+  // Ejecutar consulta paginada
+  const [items, total] = await queryBuilder
+    .skip(request.getOffset())
+    .take(request.getTake())
+    .getManyAndCount();
+
+  return new PageDto<Product>(items, total);
+}
+```
+
+### Paso 3: Implementar Lógica en Service
+
+Orquestar la búsqueda y transformación de datos:
+
+```typescript
+// product.service.ts
+async search(request: SearchProductRequestDto): Promise<PageDto<ProductDTO>> {
+  try {
+    const productPage = await this.productRepository.search(request);
+    
+    // Transformar entidades a DTOs
+    const productDtos = productPage.data.map((product) =>
+      plainToInstance(ProductDTO, product, { excludeExtraneousValues: true }),
+    );
+
+    // Construir respuesta paginada
+    const pageDto = new PageDto<ProductDTO>(productDtos, productPage.metadata.count);
+    pageDto.metadata = new PageMetadataDto(productPage.metadata.count);
+    pageDto.metadata.setPaginationData(
+      request.getPageNumber(),
+      request.getTake(),
+    );
+    pageDto.metadata.sortBy = request.sortBy ?? '-createdDate';
+    
+    return pageDto;
+  } catch (error) {
+    throw new InternalServerErrorException({
+      detail: 'Error fetching products',
+      message: error.message,
+    });
+  }
+}
+```
+
+### Paso 4: Crear Endpoint en Controller
+
+Exponer el endpoint de búsqueda paginada:
+
+```typescript
+// product.controller.ts
+@Get('search')
+async search(
+  @Query() request: SearchProductRequestDto,
+): Promise<PageDto<ProductDTO>> {
+  const req = plainToInstance(SearchProductRequestDto, request);
+  return await this.productService.search(req);
+}
+```
+
+## 5. Ejemplos de Código Completo
+
+### 5.1 Ejemplo: User (Implementación Existente)
+
+#### DTO de Búsqueda
+```typescript
+// server/src/modules/access-control/user/dto/search-user-request.dto.ts
+export class SearchUserRequestDto extends BaseSearchDto {
+  @IsString({})
+  @IsOptional()
+  id?: string;
+
+  @IsOptional()
+  @IsString({})
+  userName?: string;
+
+  @IsEmail({}, {})
+  @Expose()
+  @IsOptional()
+  email?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsEnum(ROLE, { each: true })
+  @Expose()
+  role?: ROLE[];
+}
+```
+
+#### Repository
+```typescript
+// server/src/modules/access-control/user/repository/user.repository.ts
+async search(request: SearchUserRequestDto): Promise<PageDto<User>> {
+  const queryBuilder: SelectQueryBuilder<User> =
+    this.dataSource.createQueryBuilder(User, 'user');
+
+  if (request.userName) {
+    queryBuilder.andWhere('user.userName = :userName', {
+      userName: request.userName,
+    });
+  }
+  if (request.email) {
+    queryBuilder.andWhere('user.email = :email', {
+      email: request.email,
+    });
+  }
+  if (request.id) {
+    queryBuilder.andWhere('user.id = :id', {
+      id: request.id,
+    });
+  }
+  if (request.role && request.role.length > 0) {
+    queryBuilder.andWhere({ role: ArrayOverlap(request.role) });
+  }
+
+  queryBuilder.orderBy('user.id', 'DESC');
+
+  const [list, count] = await queryBuilder
+    .skip(request.getOffset())
+    .take(request.getTake())
+    .getManyAndCount();
+
+  return new PageDto<User>(list, count);
+}
+```
+
+#### Service
+```typescript
+// server/src/modules/access-control/user/user.service.ts
+async search(request: SearchUserRequestDto): Promise<PageDto<UserDTO>> {
+  try {
+    const userPage = await this.userRepository.search(request);
+    const userDtos = userPage.data.map((user) =>
+      plainToInstance(UserDTO, user, { excludeExtraneousValues: true }),
+    );
+
+    const pageDto = new PageDto<UserDTO>(userDtos, userPage.metadata.count);
+    pageDto.metadata = new PageMetadataDto(userPage.metadata.count);
+    pageDto.metadata.setPaginationData(
+      request.getPageNumber(),
+      request.getTake(),
+    );
+    pageDto.metadata.sortBy = request.sortBy ?? 'DESC';
+    return pageDto;
+  } catch (error) {
+    throw new InternalServerErrorException({
+      detail: 'Error fetching user',
+      message: error.message,
+    });
+  }
+}
+```
+
+#### Controller
+```typescript
+// server/src/modules/access-control/user/user.controller.ts
+@Get('search')
+async search(
+  @Query() request: SearchUserRequestDto,
+): Promise<PageDto<UserDTO>> {
+  const req = plainToInstance(SearchUserRequestDto, request);
+  return await this.userService.search(req);
+}
+```
+
+### 5.2 Ejemplo: Resource (Implementación Existente)
+
+#### DTO de Búsqueda
+```typescript
+// server/src/modules/features/resource/dto/search-resource-request.dto.ts
+export class SearchResourceRequestDto extends BaseSearchDto {
+  @IsString()
+  @IsOptional()
+  search?: string;
+
+  @IsOptional()
+  tags?: string[];
+
+  @IsOptional()
+  notebookId?: number;
+
+  @IsOptional()
+  @IsNumber()
+  userId?: number;
+}
+```
+
+#### Repository con Ordenamiento Dinámico
+```typescript
+// server/src/modules/features/resource/repository/resource.repository.ts
+async search(request: SearchResourceRequestDto): Promise<PageDto<Resource>> {
+  const queryBuilder: SelectQueryBuilder<Resource> = this.createQueryBuilder(
+    'resource',
+  )
+    .leftJoinAndSelect('resource.notebook', 'notebook')
+    .leftJoinAndSelect('resource.user', 'user');
+
+  if (request.search || request.q) {
+    const searchTerm = request.search || request.q;
+    queryBuilder.andWhere(
+      '(resource.title ILIKE :search OR resource.description ILIKE :search OR resource.content ILIKE :search)',
+      { search: `%${searchTerm}%` },
+    );
+  }
+
+  if (request.notebookId) {
+    queryBuilder.andWhere('resource.notebook.id = :notebookId', {
+      notebookId: request.notebookId,
+    });
+  }
+
+  // Validación de campos de ordenamiento
+  const validSortFields = [
+    'title',
+    'description',
+    'url',
+    'filename',
+    'mimetype',
+    'fileSize',
+    'isPublic',
+    'metadata',
+  ];
+  const orderByCriteria = request.getOrderByCriterias();
+
+  orderByCriteria.forEach((criteria) => {
+    const sortBy = criteria.getSortBy();
+    if (validSortFields.includes(sortBy)) {
+      queryBuilder.addOrderBy(
+        `resource.${sortBy}`,
+        criteria.getOrderBy() as 'ASC' | 'DESC',
+      );
+    }
+  });
+
+  const [items, total] = await queryBuilder
+    .skip(request.getOffset())
+    .take(request.getTake())
+    .getManyAndCount();
+
+  return new PageDto<Resource>(items, total);
+}
+```
+
+### 5.3 Ejemplo: Product (Implementación Completa desde Cero)
+
+#### Entidad
+```typescript
+// product.entity.ts
+@Entity('products')
+export class Product extends TypeormBaseEntity {
+  @Column()
+  name: string;
+
+  @Column('text')
+  description: string;
+
+  @Column('decimal')
+  price: number;
+
+  @Column()
+  stock: number;
+
+  @ManyToOne(() => Category, (category) => category.products)
+  category: Category;
+
+  @Column('simple-array', { nullable: true })
+  tags: string[];
+}
+```
+
+#### DTO de Respuesta
+```typescript
+// product.dto.ts
+export class ProductDTO {
+  @ApiProperty()
+  id: number;
+
+  @ApiProperty()
+  name: string;
+
+  @ApiProperty()
+  description: string;
+
+  @ApiProperty()
+  price: number;
+
+  @ApiProperty()
+  stock: number;
+
+  @ApiProperty()
+  category: CategoryDTO;
+
+  @ApiProperty()
+  tags: string[];
+
+  @ApiProperty()
+  createdAt: Date;
+
+  @ApiProperty()
+  updatedAt: Date;
+}
+```
+
+#### DTO de Búsqueda
+```typescript
+// search-product.dto.ts
+import { IsString, IsOptional, IsNumber, IsArray, Min } from 'class-validator';
+import { Type } from 'class-transformer';
+import { BaseSearchDto } from 'src/common/dto/base-search.dto';
+
+export class SearchProductRequestDto extends BaseSearchDto {
+  @IsString()
+  @IsOptional()
+  name?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  minPrice?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  maxPrice?: number;
+
+  @IsOptional()
+  @IsArray()
+  categories?: string[];
+  
+  @IsOptional()
+  @IsArray()
+  tags?: string[];
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  minStock?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  inStock?: boolean; // true para solo productos con stock
+}
+```
+
+#### Repository
+```typescript
+// product.repository.ts
+@Injectable()
+export class ProductRepository extends Repository<Product> {
+  constructor(private dataSource: DataSource) {
+    super(Product, dataSource.createEntityManager());
+  }
+
+  async search(request: SearchProductRequestDto): Promise<PageDto<Product>> {
+    const queryBuilder: SelectQueryBuilder<Product> =
+      this.createQueryBuilder('product')
+        .leftJoinAndSelect('product.category', 'category');
+
+    // Filtros específicos
+    if (request.name) {
+      queryBuilder.andWhere('product.name ILIKE :name', {
+        name: `%${request.name}%`,
+      });
+    }
+
+    if (request.minPrice !== undefined) {
+      queryBuilder.andWhere('product.price >= :minPrice', {
+        minPrice: request.minPrice,
+      });
+    }
+
+    if (request.maxPrice !== undefined) {
+      queryBuilder.andWhere('product.price <= :maxPrice', {
+        maxPrice: request.maxPrice,
+      });
+    }
+
+    if (request.minStock !== undefined) {
+      queryBuilder.andWhere('product.stock >= :minStock', {
+        minStock: request.minStock,
+      });
+    }
+
+    if (request.inStock === true) {
+      queryBuilder.andWhere('product.stock > 0');
+    }
+
+    if (request.categories && request.categories.length > 0) {
+      queryBuilder.andWhere('category.name IN (:...categories)', {
+        categories: request.categories,
+      });
+    }
+
+    if (request.tags && request.tags.length > 0) {
+      queryBuilder.andWhere('product.tags && :tags', { tags: request.tags });
+    }
+
+    // Búsqueda textual
+    if (request.q) {
+      queryBuilder.andWhere(
+        '(product.name ILIKE :search OR product.description ILIKE :search)',
+        { search: `%${request.q}%` },
+      );
+    }
+
+    // Ordenamiento dinámico con validación
+    const validSortFields = [
+      'name',
+      'price',
+      'stock',
+      'createdAt',
+      'updatedAt',
+      'category.name',
+    ];
+    const orderByCriteria = request.getOrderByCriterias();
+
+    orderByCriteria.forEach((criteria) => {
+      const sortBy = criteria.getSortBy();
+      if (validSortFields.includes(sortBy)) {
+        // Manejar ordenamiento por campo de relación
+        const fieldPath = sortBy.includes('.') ? sortBy : `product.${sortBy}`;
+        queryBuilder.addOrderBy(
+          fieldPath,
+          criteria.getOrderBy() as 'ASC' | 'DESC',
+        );
+      }
+    });
+
+    // Ordenamiento por defecto si no se especifica
+    if (orderByCriteria.length === 0 || 
+        !orderByCriteria.some(c => validSortFields.includes(c.getSortBy()))) {
+      queryBuilder.orderBy('product.createdAt', 'DESC');
+    }
+
+    const [items, total] = await queryBuilder
+      .skip(request.getOffset())
+      .take(request.getTake())
+      .getManyAndCount();
+
+    return new PageDto<Product>(items, total);
+  }
+}
+```
+
+#### Service
+```typescript
+// product.service.ts
+@Injectable()
+export class ProductService {
+  constructor(
+    private productRepository: ProductRepository,
+  ) {}
+
+  async search(request: SearchProductRequestDto): Promise<PageDto<ProductDTO>> {
+    try {
+      const productPage = await this.productRepository.search(request);
+      
+      // Transformar entidades a DTOs
+      const productDtos = productPage.data.map((product) =>
+        plainToInstance(ProductDTO, product, { excludeExtraneousValues: true }),
+      );
+
+      // Construir respuesta paginada completa
+      const pageDto = new PageDto<ProductDTO>(productDtos, productPage.metadata.count);
+      pageDto.metadata = new PageMetadataDto(productPage.metadata.count);
+      pageDto.metadata.setPaginationData(
+        request.getPageNumber(),
+        request.getTake(),
+      );
+      pageDto.metadata.sortBy = request.sortBy ?? '-createdAt';
+      
+      return pageDto;
+    } catch (error) {
+      throw new InternalServerErrorException({
+        detail: 'Error fetching products',
+        message: error.message,
+      });
+    }
+  }
+
+  // Otros métodos del servicio...
+  async findOne(id: number): Promise<ProductDTO> {
+    const product = await this.productRepository.findOne({
+      where: { id },
+      relations: ['category'],
+    });
+
+    if (!product) {
+      throw new NotFoundException(`Product with ID ${id} not found`);
+    }
+
+    return plainToInstance(ProductDTO, product, {
+      excludeExtraneousValues: true,
+    });
+  }
+
+  async create(request: CreateProductRequestDto): Promise<ProductDTO> {
+    const product = new Product();
+    Object.assign(product, request);
+    
+    const savedProduct = await this.productRepository.save(product);
+    return plainToInstance(ProductDTO, savedProduct, {
+      excludeExtraneousValues: true,
+    });
+  }
+}
+```
+
+#### Controller
+```typescript
+// product.controller.ts
+@Controller('products')
+@ApiTags('products')
+export class ProductController {
+  constructor(private productService: ProductService) {}
+
+  @Get('search')
+  @ApiOperation({ summary: 'Search products with pagination and filters' })
+  @ApiResponse({ status: 200, description: 'Products retrieved successfully', type: PageDto<ProductDTO> })
+  async search(
+    @Query() request: SearchProductRequestDto,
+  ): Promise<PageDto<ProductDTO>> {
+    const req = plainToInstance(SearchProductRequestDto, request);
+    return await this.productService.search(req);
+  }
+
+  @Get(':id')
+  @ApiOperation({ summary: 'Get product by ID' })
+  @ApiResponse({ status: 200, description: 'Product retrieved successfully', type: ProductDTO })
+  async findOne(@Param('id') id: number): Promise<ProductDTO> {
+    return await this.productService.findOne(id);
+  }
+
+  @Post()
+  @ApiOperation({ summary: 'Create new product' })
+  @ApiResponse({ status: 201, description: 'Product created successfully', type: ProductDTO })
+  async create(
+    @Body() createProductRequestDto: CreateProductRequestDto,
+  ): Promise<ProductDTO> {
+    return await this.productService.create(createProductRequestDto);
+  }
+}
+```
+
+## 6. Buenas Prácticas
+
+### 6.1 Validación de Parámetros
+
+- Siempre validar los parámetros de entrada usando decoradores de `class-validator`
+- Usar `@Type(() => Number)` para conversión automática de tipos
+- Establecer valores por defecto en los DTOs base
+- Limitar el tamaño máximo de página para prevenir sobrecarga
+
+### 6.2 Seguridad en Consultas
+
+- Validar campos de ordenamiento para prevenir SQL Injection
+- Usar parámetros con nombre en todas las consultas
+- Escapar correctamente los valores de búsqueda con ILIKE
+- Implementar validación de permisos cuando sea necesario
+
+### 6.3 Optimización de Rendimiento
+
+- Seleccionar solo los campos necesarios en las consultas
+- Usar índices en campos frecuentemente filtrados
+- Implementar caché para búsquedas comunes
+- Considerar consultas separadas para relaciones pesadas
+
+### 6.4 Manejo de Errores
+
+- Implementar manejo consistente de errores en todas las capas
+- Proporcionar mensajes de error claros pero seguros
+- Loggear errores técnicos para depuración
+- Usar códigos HTTP apropiados
+
+### 6.5 Documentación
+
+- Documentar todos los endpoints con Swagger/OpenAPI
+- Incluir ejemplos de parámetros de búsqueda
+- Documentar campos disponibles para ordenamiento
+- Especificar formatos de respuesta
+
+## 7. Consideraciones Avanzadas
+
+### 7.1 Ordenamiento Dinámico
+
+El patrón soporta ordenamiento dinámico múltiple:
+
+```typescript
+// Ejemplos de sortBy:
+// "name"                    → ASC por nombre
+// "-price"                  → DESC por precio
+// "name,price"              → ASC por nombre, luego ASC por precio
+// "-createdAt,name"         → DESC por fecha, luego ASC por nombre
+```
+
+Implementación en Repository:
+
+```typescript
+const validSortFields = ['name', 'price', 'createdAt'];
+const orderByCriteria = request.getOrderByCriterias();
+
+orderByCriteria.forEach((criteria) => {
+  const sortBy = criteria.getSortBy();
+  if (validSortFields.includes(sortBy)) {
+    queryBuilder.addOrderBy(
+      `product.${sortBy}`,
+      criteria.getOrderBy() as 'ASC' | 'DESC',
+    );
+  }
+});
+```
+
+### 7.2 Filtros Complejos
+
+Para filtros más complejos, se pueden implementar métodos específicos:
+
+```typescript
+// Filtro por rango de fechas
+if (request.dateFrom) {
+  queryBuilder.andWhere('product.createdAt >= :dateFrom', {
+    dateFrom: request.dateFrom,
+  });
+}
+
+if (request.dateTo) {
+  queryBuilder.andWhere('product.createdAt <= :dateTo', {
+    dateTo: request.dateTo,
+  });
+}
+
+// Filtro por array de IDs
+if (request.categoryIds && request.categoryIds.length > 0) {
+  queryBuilder.andWhere('product.categoryId IN (:...categoryIds)', {
+    categoryIds: request.categoryIds,
+  });
+}
+```
+
+### 7.3 Búsqueda Full-Text
+
+Para búsquedas más avanzadas, considerar:
+
+```typescript
+// Búsqueda en múltiples campos
+if (request.q) {
+  queryBuilder.andWhere(
+    `(product.name ILIKE :search OR product.description ILIKE :search OR product.tags ILIKE :search)`,
+    { search: `%${request.q}%` },
+  );
+}
+
+// Búsqueda con ponderación (PostgreSQL)
+if (request.q) {
+  queryBuilder
+    .addSelect(
+      `ts_rank_cd(
+        to_tsvector('english', product.name || ' ' || product.description),
+        plainto_tsquery('english', :search)
+      )`,
+      'rank'
+    )
+    .andWhere(
+      `to_tsvector('english', product.name || ' ' || product.description) @@ plainto_tsquery('english', :search)`,
+      { search: request.q }
+    )
+    .orderBy('rank', 'DESC');
+}
+```
+
+### 7.4 Paginación con Cursor
+
+Para grandes volúmenes de datos, considerar paginación con cursor:
+
+```typescript
+// DTO base extendido para cursor
+export class CursorSearchDto extends BaseSearchDto {
+  @IsOptional()
+  @IsString()
+  cursor?: string;
+}
+
+// Implementación en repository
+if (request.cursor) {
+  queryBuilder.andWhere('product.id > :cursor', {
+    cursor: request.cursor,
+  });
+}
+
+queryBuilder.orderBy('product.id', 'ASC');
+queryBuilder.take(request.getTake() + 1); // +1 para determinar si hay más páginas
+```
+
+### 7.5 Agregaciones y Conteos
+
+Incluir datos agregados en la respuesta:
+
+```typescript
+// Conteo por categorías
+const categoryCounts = await queryBuilder
+  .select('category.name', 'category')
+  .addSelect('COUNT(*)', 'count')
+  .groupBy('category.id')
+  .getRawMany();
+
+// Incluir en metadatos
+pageDto.metadata.categoryCounts = categoryCounts;
+```
+
+### 7.6 Caché de Resultados
+
+Implementar caché para búsquedas frecuentes:
+
+```typescript
+// En el service
+async search(request: SearchProductRequestDto): Promise<PageDto<ProductDTO>> {
+  const cacheKey = `products:${JSON.stringify(request)}`;
+  
+  // Intentar obtener del caché
+  const cached = await this.cacheManager.get<PageDto<ProductDTO>>(cacheKey);
+  if (cached) {
+    return cached;
+  }
+  
+  // Ejecutar búsqueda
+  const result = await this.performSearch(request);
+  
+  // Guardar en caché por 5 minutos
+  await this.cacheManager.set(cacheKey, result, 300000);
+  
+  return result;
+}
+```
+
+## 8. Resumen del Patrón
+
+El patrón de paginación implementado en el proyecto proporciona:
+
+1. **Consistencia**: Misma estructura en todas las entidades
+2. **Flexibilidad**: Soporte para filtros y ordenamiento dinámico
+3. **Seguridad**: Validación automática y protección contra inyección
+4. **Performance**: Consultas optimizadas con límites configurables
+5. **Mantenibilidad**: Código modular y reutilizable
+6. **Extensibilidad**: Fácil de extender para nuevos requisitos
+
+Este patrón establece una base sólida para cualquier implementación de paginación en el proyecto, garantizando que todas las APIs sigan los mismos estándares de calidad y consistencia.

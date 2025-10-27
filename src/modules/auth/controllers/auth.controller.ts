@@ -5,11 +5,17 @@ import { LoginDto } from '../dto/login.dto';
 import { RegisterDto } from '../dto/register.dto';
 import { RefreshTokenDto } from '../dto/refresh-token.dto';
 import { AuthResponseDto } from '../dto/auth-response.dto';
+import { AppLogger } from '../../../common/logger/logger';
 
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly logger: AppLogger,
+  ) {
+    this.logger.setContext(AuthController.name);
+  }
 
   @Post('register')
   @ApiOperation({ summary: 'Register a new user' })

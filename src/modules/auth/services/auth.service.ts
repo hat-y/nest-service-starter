@@ -8,6 +8,7 @@ import { LoginDto } from '../dto/login.dto';
 import { RegisterDto } from '../dto/register.dto';
 import { RefreshTokenDto } from '../dto/refresh-token.dto';
 import { AuthResponseDto } from '../dto/auth-response.dto';
+import { AppLogger } from '../../../common/logger/logger';
 
 @Injectable()
 export class AuthService {
@@ -15,14 +16,27 @@ export class AuthService {
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     private readonly jwtService: JwtService,
-  ) {}
+    private readonly logger: AppLogger,
+  ) {
+    this.logger.setContext(AuthService.name);
+  }
 
   async register(registerDto: RegisterDto): Promise<AuthResponseDto> {
+    this.logger.log({
+      message: `Intento de registro para usuario: ${registerDto.email}`,
+      email: registerDto.email,
+      name: registerDto.name,
+    });
+
     const existingUser = await this.userRepository.findOne({
       where: { email: registerDto.email },
     });
 
     if (existingUser) {
+      this.logger.warn({
+        message: `Intento de registro con email ya existente: ${registerDto.email}`,
+        email: registerDto.email,
+      });
       throw new ConflictException('User with this email already exists');
     }
 
@@ -39,6 +53,12 @@ export class AuthService {
 
     await this.updateLastLogin(savedUser.id);
 
+    this.logger.log({
+      message: `Usuario registrado exitosamente`,
+      userId: savedUser.id,
+      email: savedUser.email,
+    });
+
     return {
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
@@ -51,27 +71,52 @@ export class AuthService {
   }
 
   async login(loginDto: LoginDto): Promise<AuthResponseDto> {
+    this.logger.log({
+      message: `Intento de login para usuario: ${loginDto.email}`,
+      email: loginDto.email,
+    });
+
     const user = await this.userRepository.findOne({
       where: { email: loginDto.email },
     });
 
     if (!user) {
+      this.logger.warn({
+        message: `Login fallido - usuario no encontrado: ${loginDto.email}`,
+        email: loginDto.email,
+      });
       throw new UnauthorizedException('Invalid credentials');
     }
 
     const isPasswordValid = await bcrypt.compare(loginDto.password, user.password);
 
     if (!isPasswordValid) {
+      this.logger.warn({
+        message: `Login fallido - contraseña inválida: ${loginDto.email}`,
+        email: loginDto.email,
+        userId: user.id,
+      });
       throw new UnauthorizedException('Invalid credentials');
     }
 
     if (!user.isActive) {
+      this.logger.warn({
+        message: `Login fallido - cuenta desactivada: ${loginDto.email}`,
+        email: loginDto.email,
+        userId: user.id,
+      });
       throw new UnauthorizedException('User account is deactivated');
     }
 
     const tokens = await this.generateTokens(user.id, user.email);
 
     await this.updateLastLogin(user.id);
+
+    this.logger.log({
+      message: `Login exitoso para usuario: ${loginDto.email}`,
+      email: loginDto.email,
+      userId: user.id,
+    });
 
     return {
       accessToken: tokens.accessToken,

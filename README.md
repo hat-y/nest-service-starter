@@ -1,60 +1,163 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Nest Service Starter
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+A modular NestJS service starter with authentication, user management, and enterprise-ready features.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## 🏗️ Architecture
 
-## Description
+This project follows a **modular architecture** with clean separation of concerns:
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
-
-## Project setup
-
-```bash
-$ pnpm install
+```
+src/
+├── common/                     # 🔧 Technical Infrastructure
+│   ├── config/                 # Configuration (Database, Swagger)
+│   ├── decorators/             # Reusable decorators
+│   ├── guards/                 # Technical guards
+│   ├── interceptors/           # HTTP interceptors
+│   ├── pipes/                  # Validation & transformation
+│   ├── filters/                # Exception filters
+│   ├── utils/                  # Utility functions
+│   └── constants/              # Technical constants
+│
+├── modules/                    # 📦 Business Modules
+│   ├── auth/                   # 🗝️ Authentication
+│   │   ├── dto/                # Data Transfer Objects
+│   │   ├── entities/           # Database entities
+│   │   ├── services/           # Business logic
+│   │   ├── controllers/        # HTTP controllers
+│   │   ├── strategies/         # Auth strategies
+│   │   └── auth.module.ts      # Module definition
+│   └── users/                  # 👥 User Management
+│       ├── dto/                # Data Transfer Objects
+│       ├── entities/           # Database entities
+│       ├── services/           # Business logic
+│       ├── controllers/        # HTTP controllers
+│       └── users.module.ts     # Module definition
+│
+├── app.module.ts               # 🚀 Root Module
+└── main.ts                     # 🎯 Application Entry Point
 ```
 
-## Compile and run the project
+## 🚀 Features
+
+- ✅ **Modular Architecture** - Clean and scalable module structure
+- ✅ **JWT Authentication** - Secure token-based authentication
+- ✅ **User Management** - Complete CRUD with pagination and filtering
+- ✅ **TypeORM Integration** - PostgreSQL database with migrations
+- ✅ **Swagger Documentation** - Auto-generated interactive API docs
+- ✅ **Input Validation** - Comprehensive DTO validation
+- ✅ **Structured Logging** - Pino logger with context
+- ✅ **Environment Config** - Type-safe configuration with Zod
+- ✅ **Error Handling** - Centralized exception filters
+- ✅ **Testing** - Unit and integration tests with Jest
+
+## 📋 Prerequisites
+
+- Node.js 18+
+- PostgreSQL 13+
+- pnpm (recommended)
+
+## 🛠️ Installation
 
 ```bash
-# development
-$ pnpm run start
+# Clone repository
+git clone <repository-url>
+cd nest-service-starter
 
-# watch mode
-$ pnpm run start:dev
+# Install dependencies
+pnpm install
 
-# production mode
-$ pnpm run start:prod
+# Copy environment variables
+cp .env.example .env
+
+# Update .env with your configuration
 ```
 
-## Run tests
+## ⚙️ Environment Variables
 
 ```bash
-# unit tests
-$ pnpm run test
+# Application
+PORT=3000
+NODE_ENV=development
 
-# e2e tests
-$ pnpm run test:e2e
+# Database
+DB_HOST=localhost
+DB_PORT=5432
+DB_USERNAME=postgres
+DB_PASSWORD=your_password
+DB_DATABASE=nest_service_starter
 
-# test coverage
-$ pnpm run test:cov
+# JWT
+JWT_SECRET=your-super-secret-jwt-key-min-32-chars
+JWT_REFRESH_SECRET=your-super-secret-refresh-key-min-32-chars
+JWT_EXPIRES_IN=15m
+JWT_REFRESH_EXPIRES_IN=7d
+```
+
+## 🏃‍♂️ Running the Application
+
+```bash
+# Development mode with hot reload
+pnpm run start:dev
+
+# Debug mode
+pnpm run start:debug
+
+# Production build
+pnpm run build
+pnpm run start:prod
+```
+
+## 📚 API Documentation
+
+When running in development mode, Swagger documentation is available at:
+
+```
+http://localhost:3000/api/docs
+```
+
+## 🗂️ Available Endpoints
+
+### Authentication (`/auth`)
+- `POST /auth/register` - Register new user
+- `POST /auth/login` - User login
+- `POST /auth/refresh` - Refresh access token
+
+### Users (`/users`)
+- `GET /users` - Get all users (with pagination)
+- `GET /users/:id` - Get user by ID
+- `POST /users` - Create new user
+- `PATCH /users/:id` - Update user
+- `DELETE /users/:id` - Soft delete user
+- `PATCH /users/:id/activate` - Activate user
+- `PATCH /users/:id/deactivate` - Deactivate user
+
+## 🧪 Testing
+
+```bash
+# Run all tests
+pnpm run test
+
+# Run tests in watch mode
+pnpm run test:watch
+
+# Run tests with coverage
+pnpm run test:cov
+
+# Run e2e tests
+pnpm run test:e2e
+```
+
+## 🔧 Development Commands
+
+```bash
+# Code formatting
+pnpm run format
+
+# Linting and auto-fix
+pnpm run lint
+
+# Build project
+pnpm run build
 ```
 
 ## Deployment
